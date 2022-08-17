@@ -27,6 +27,38 @@ pub struct ShoSha256 {
     mode: Mode,
 }
 
+impl ShoSha256 {
+    fn squeeze_and_ratchet_u32(&mut self, outlen: u32) -> Vec<u8> {
+        if let Mode::ABSORBING = self.mode {
+            panic!();
+        }
+        let mut output = Vec::<u8>::new();
+        let mut output_hasher_prefix = Sha256::new();
+        output_hasher_prefix.update(&[0u8; BLOCK_LEN - 1]);
+        output_hasher_prefix.update(&[1u8]); // domain separator byte
+        output_hasher_prefix.update(self.cv);
+        let mut i = (1u32<<27) - 50;
+        while i * (HASH_LEN as u32) < outlen {
+            let mut output_hasher = output_hasher_prefix.clone();
+            output_hasher.update((i as u64).to_be_bytes());
+            let digest = output_hasher.finalize();
+            let num_bytes = cmp::min(HASH_LEN as u32, outlen - i * (HASH_LEN as u32)) as usize;
+            output.extend_from_slice(&digest[0..num_bytes]);
+            i += 1
+        }
+
+        let mut next_hasher = Sha256::new();
+        next_hasher.update(&[0u8; BLOCK_LEN - 1]);
+        next_hasher.update(&[2u8]); // domain separator byte
+        next_hasher.update(self.cv);
+        next_hasher.update((outlen as u64).to_be_bytes());
+        self.cv.copy_from_slice(&next_hasher.finalize()[..]);
+        self.mode = Mode::RATCHETED;
+        output
+    }
+
+}
+
 impl ShoApi for ShoSha256 {
     fn new(label: &[u8]) -> ShoSha256 {
         let mut sho = ShoSha256 {
@@ -87,12 +119,21 @@ impl ShoApi for ShoSha256 {
         self.mode = Mode::RATCHETED;
         output
     }
+
 }
 
 #[cfg(test)]
 mod tests {
 
     use super::*;
+
+    #[test]
+    fn test_sho_overflow() {
+        let mut sho = ShoSha256::new(b"asd");
+        sho.absorb_and_ratchet(b"asdasd");
+        let _ = sho.squeeze_and_ratchet_u32(u32::MAX - HASH_LEN as u32);
+        let _ = sho.squeeze_and_ratchet_u32(u32::MAX);
+    }
 
     #[test]
     fn test_vectors() {
