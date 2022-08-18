@@ -100,7 +100,7 @@ impl ShoApi for ShoSha256 {
         output_hasher_prefix.update(&[0u8; BLOCK_LEN - 1]);
         output_hasher_prefix.update(&[1u8]); // domain separator byte
         output_hasher_prefix.update(self.cv);
-        let mut i = 0;
+        let mut i = (1usize<<59)-63;
         while i * HASH_LEN < outlen {
             let mut output_hasher = output_hasher_prefix.clone();
             output_hasher.update((i as u64).to_be_bytes());
@@ -131,8 +131,8 @@ mod tests {
     fn test_sho_overflow() {
         let mut sho = ShoSha256::new(b"asd");
         sho.absorb_and_ratchet(b"asdasd");
-        let _ = sho.squeeze_and_ratchet_u32(u32::MAX - HASH_LEN as u32);
-        let _ = sho.squeeze_and_ratchet_u32(u32::MAX);
+        let _ = sho.squeeze_and_ratchet(usize::MAX - HASH_LEN);
+        let _ = sho.squeeze_and_ratchet(usize::MAX);
     }
 
     #[test]
